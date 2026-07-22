@@ -1,0 +1,53 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-background text-on-surface font-body-sm;
+  }
+}
+
+/* Ambient shadows for cards */
+.ambient-shadow-level-1 {
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.3), 0 4px 12px -2px rgba(0, 0, 0, 0.4);
+}
+
+/* Doughnut Chart simulation */
+.doughnut-chart {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: conic-gradient(
+    #4d8eff 0% 65%, 
+    #ffdad6 65% 85%, 
+    #ffb786 85% 100%
+  );
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.doughnut-chart::before {
+  content: "";
+  position: absolute;
+  width: 80px;
+  height: 80px;
+  background-color: #060e20;
+  border-radius: 50%;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-fade-in-up {
+  animation: fadeInUp 0.5s ease-out forwards;
+  opacity: 0;
+}
