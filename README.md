@@ -107,7 +107,7 @@ cd backend
 pip install -r requirements.txt
 ```
 
-Start the FastAPI server using Uvicorn(after cd backend):
+Start the FastAPI server using Uvicorn (after cd backend):
 
 ```bash
 python -m uvicorn main:app --reload
