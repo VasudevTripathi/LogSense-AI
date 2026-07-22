@@ -107,10 +107,10 @@ cd backend
 pip install -r requirements.txt
 ```
 
-Start the FastAPI server using Uvicorn:
+Start the FastAPI server using Uvicorn(after cd backend):
 
 ```bash
-uvicorn main:app --reload
+python -m uvicorn main:app --reload
 ```
 
 The API will be available at `http://localhost:8000` with interactive API documentation at `http://localhost:8000/docs`.
