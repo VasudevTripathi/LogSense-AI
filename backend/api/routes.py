@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 from fastapi import APIRouter, File, UploadFile, HTTPException, status
-from backend.parser.log_parser import parse_log_file
+from parser.log_parser import parse_log_file
 
 router = APIRouter()
 
