@@ -1,12 +1,10 @@
 import os
+import uuid
 from pathlib import Path
 from fastapi import APIRouter, File, UploadFile, HTTPException, status
 from parser.log_parser import parse_log_file, parse_log_content
-from services.analytics import (
-    add_parsed_logs,
-    get_parsed_logs,
-    generate_dashboard_metrics,
-)
+from database.operations import insert_logs, get_all_logs
+from services.analytics import generate_dashboard_metrics
 
 router = APIRouter()
 
@@ -20,17 +18,18 @@ MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB limit
 
 def sync_stored_logs_from_uploads() -> None:
     """
-    Scans UPLOAD_DIR for saved log files and loads them into memory
-    if the in-memory log store is currently empty.
+    Scans UPLOAD_DIR for saved log files and persists them into SQLite
+    if the database is currently empty.
     """
-    if not get_parsed_logs() and UPLOAD_DIR.exists():
+    if not get_all_logs() and UPLOAD_DIR.exists():
         for file_path in UPLOAD_DIR.glob("*"):
             if file_path.is_file() and file_path.suffix.lower() in ALLOWED_EXTENSIONS:
                 try:
                     content = file_path.read_bytes()
                     records = parse_log_content(content, file_path.name)
                     if records:
-                        add_parsed_logs(records)
+                        upload_id = f"upload_sync_{uuid.uuid4().hex[:8]}"
+                        insert_logs(records, upload_id)
                 except Exception:
                     pass
 
@@ -86,19 +85,21 @@ async def upload_file(file: UploadFile = File(...)):
             detail=f"Failed to save uploaded file: {str(e)}"
         )
 
-    # Parse file and update in-memory store
+    # Parse file and store in SQLite database
     try:
+        upload_id = f"upload_{uuid.uuid4().hex[:12]}"
         total_logs, preview = parse_log_file(content, filename)
         parsed_records = parse_log_content(content, filename)
-        add_parsed_logs(parsed_records)
+        insert_logs(parsed_records, upload_id)
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error parsing log file: {str(e)}"
+            detail=f"Error processing and storing log file: {str(e)}"
         )
 
     return {
         "status": "success",
+        "upload_id": upload_id,
         "filename": filename,
         "total_logs": total_logs,
         "preview": preview
@@ -108,8 +109,7 @@ async def upload_file(file: UploadFile = File(...)):
 @router.get("/dashboard")
 def get_dashboard():
     sync_stored_logs_from_uploads()
-    logs = get_parsed_logs()
-    metrics = generate_dashboard_metrics(logs)
+    metrics = generate_dashboard_metrics()
     return {
         "status": "success",
         "data": metrics

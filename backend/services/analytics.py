@@ -1,43 +1,18 @@
 """
 LogSense AI - Backend Analytics Service
 Computes dashboard metrics, log statistics, timelines, and error aggregations
-from parsed log records.
+from SQLite database records.
 """
 
 import re
 from typing import List, Dict, Any, Optional
 from collections import Counter, defaultdict
+from database.operations import get_all_logs, get_top_services, get_recent_errors
 
 # Regex patterns for timestamp hour extraction
 ISO_DATETIME_PATTERN = re.compile(r'(\d{4}-\d{2}-\d{2})[T ](\d{2}):\d{2}')
 TIME_ONLY_PATTERN = re.compile(r'^\s*(\d{2}):\d{2}')
 SYSLOG_TIME_PATTERN = re.compile(r'([A-Za-z]{3}\s+\d{1,2})\s+(\d{2}):\d{2}')
-
-# Global in-memory log store
-_STORED_LOGS: List[Dict[str, Any]] = []
-
-
-def add_parsed_logs(logs: List[Dict[str, Any]]) -> None:
-    """Appends new parsed log records to the in-memory log store."""
-    global _STORED_LOGS
-    _STORED_LOGS.extend(logs)
-
-
-def set_parsed_logs(logs: List[Dict[str, Any]]) -> None:
-    """Replaces the in-memory log store with a new list of parsed log records."""
-    global _STORED_LOGS
-    _STORED_LOGS = list(logs)
-
-
-def get_parsed_logs() -> List[Dict[str, Any]]:
-    """Returns all currently stored parsed log records."""
-    return _STORED_LOGS
-
-
-def clear_parsed_logs() -> None:
-    """Clears all stored parsed log records."""
-    global _STORED_LOGS
-    _STORED_LOGS = []
 
 
 def extract_hour_bucket(timestamp: Optional[str]) -> str:
@@ -70,17 +45,20 @@ def extract_hour_bucket(timestamp: Optional[str]) -> str:
     return "Unknown"
 
 
-def generate_dashboard_metrics(parsed_logs: List[Dict[str, Any]]) -> Dict[str, Any]:
+def generate_dashboard_metrics(parsed_logs: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
     """
-    Computes dashboard analytics from a list of parsed log records.
+    Computes dashboard analytics from SQLite database records (or provided parsed logs).
 
     Parameters:
-        parsed_logs: List of parsed log dictionaries containing timestamp, level, service, message.
+        parsed_logs: Optional list of log dicts. If None, queries all logs from SQLite database.
 
     Returns:
         Dictionary containing overall metrics, log level distribution, top services,
         hourly timeline breakdown, and recent error records.
     """
+    if parsed_logs is None:
+        parsed_logs = get_all_logs()
+
     if not parsed_logs:
         return {
             "total_logs": 0,

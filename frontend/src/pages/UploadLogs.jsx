@@ -77,6 +77,7 @@ export default function UploadLogs() {
       const response = await apiService.uploadLogs(formData);
       if (response.data && response.data.status === 'success') {
         setParseResult(response.data);
+        window.dispatchEvent(new CustomEvent('logs-updated'));
       } else {
         setValidationError('Unexpected server response format.');
       }
