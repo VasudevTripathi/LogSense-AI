@@ -155,10 +155,9 @@ def parse_csv_content(content_str: str) -> List[Dict[str, Any]]:
     return results
 
 
-def parse_log_file(file_content: bytes, filename: str) -> Tuple[int, List[Dict[str, Any]]]:
+def parse_log_content(file_content: bytes, filename: str) -> List[Dict[str, Any]]:
     """
-    Main entry point to parse log files (.log, .txt, .csv).
-    Returns (total_logs, preview_records_up_to_20).
+    Parses log file content (.log, .txt, .csv) into a list of parsed records.
     """
     content_str = file_content.decode("utf-8", errors="replace")
     ext = filename.lower().split(".")[-1] if "." in filename else ""
@@ -174,6 +173,15 @@ def parse_log_file(file_content: bytes, filename: str) -> Tuple[int, List[Dict[s
             if record:
                 parsed_records.append(record)
 
+    return parsed_records
+
+
+def parse_log_file(file_content: bytes, filename: str) -> Tuple[int, List[Dict[str, Any]]]:
+    """
+    Main entry point to parse log files (.log, .txt, .csv).
+    Returns (total_logs, preview_records_up_to_20).
+    """
+    parsed_records = parse_log_content(file_content, filename)
     total_logs = len(parsed_records)
     preview = parsed_records[:20]
 

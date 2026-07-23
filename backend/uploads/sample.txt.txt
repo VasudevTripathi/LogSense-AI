@@ -1,0 +1,3 @@
+2026-07-23 12:00:01 INFO Auth User login successful
+2026-07-23 12:00:04 WARN Payment High response time
+2026-07-23 12:00:07 ERROR Database Connection timeout
