@@ -1,9 +1,17 @@
 import os
 import uuid
 from pathlib import Path
-from fastapi import APIRouter, File, UploadFile, HTTPException, status
+from typing import Optional
+from fastapi import APIRouter, File, UploadFile, HTTPException, Query, status
 from parser.log_parser import parse_log_file, parse_log_content
-from database.operations import insert_logs, get_all_logs
+from database.operations import (
+    insert_logs,
+    get_all_logs,
+    search_logs,
+    count_logs,
+    get_services,
+    get_upload_ids,
+)
 from services.analytics import generate_dashboard_metrics
 
 router = APIRouter()
@@ -113,6 +121,56 @@ def get_dashboard():
     return {
         "status": "success",
         "data": metrics
+    }
+
+
+@router.get("/logs")
+def get_logs(
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=500),
+    search: Optional[str] = Query(None),
+    level: Optional[str] = Query(None),
+    service: Optional[str] = Query(None),
+    upload_id: Optional[str] = Query(None),
+    sort: str = Query("desc", pattern="^(asc|desc|ASC|DESC)$")
+):
+    """
+    Paginated search and filter endpoint for log explorer.
+    Uses SQLite LIMIT and OFFSET to return exact log slices.
+    """
+    sync_stored_logs_from_uploads()
+    total = count_logs(search=search, level=level, service=service, upload_id=upload_id)
+    logs = search_logs(
+        page=page,
+        limit=limit,
+        search=search,
+        level=level,
+        service=service,
+        upload_id=upload_id,
+        sort=sort
+    )
+    pages = (total + limit - 1) // limit if total > 0 else 0
+
+    return {
+        "status": "success",
+        "page": page,
+        "limit": limit,
+        "total": total,
+        "pages": pages,
+        "logs": logs
+    }
+
+
+@router.get("/logs/meta")
+def get_logs_meta():
+    """
+    Returns available services and upload_ids for filter dropdowns.
+    """
+    sync_stored_logs_from_uploads()
+    return {
+        "status": "success",
+        "services": get_services(),
+        "upload_ids": get_upload_ids()
     }
 
 

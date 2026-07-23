@@ -9,6 +9,8 @@ export const apiClient = axios.create({
 export const apiService = {
   checkHealth: () => apiClient.get('/'),
   getDashboard: () => apiClient.get('/dashboard'),
+  getLogs: (params) => apiClient.get('/logs', { params }),
+  getLogMetadata: () => apiClient.get('/logs/meta'),
   uploadLogs: (formData) =>
     apiClient.post('/upload', formData, {
       headers: {

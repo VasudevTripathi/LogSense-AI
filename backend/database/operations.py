@@ -3,7 +3,7 @@ LogSense AI - Database Operations Module
 Encapsulates all raw SQL CRUD operations for log storage and retrieval.
 """
 
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional, Tuple
 from database.connection import get_db_connection, init_db
 
 
@@ -64,6 +64,150 @@ def get_all_logs() -> List[Dict[str, Any]]:
         """)
         rows = cursor.fetchall()
         return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def _build_where_clause(
+    search: Optional[str] = None,
+    level: Optional[str] = None,
+    service: Optional[str] = None,
+    upload_id: Optional[str] = None
+) -> Tuple[str, List[Any]]:
+    """
+    Internal helper to construct parameterized SQL WHERE clause and argument list.
+    """
+    conditions = []
+    params: List[Any] = []
+
+    if search and search.strip():
+        term = f"%{search.strip().lower()}%"
+        conditions.append("(LOWER(message) LIKE ? OR LOWER(service) LIKE ? OR LOWER(level) LIKE ?)")
+        params.extend([term, term, term])
+
+    if level and level.strip().upper() not in ("ALL", "ALL LEVELS", ""):
+        lvl = level.strip().upper()
+        if lvl in ("ERROR", "ERR"):
+            conditions.append("UPPER(level) IN ('ERROR', 'ERR')")
+        elif lvl in ("WARN", "WARNING"):
+            conditions.append("UPPER(level) IN ('WARN', 'WARNING')")
+        elif lvl in ("CRITICAL", "FATAL", "SEVERE"):
+            conditions.append("UPPER(level) IN ('CRITICAL', 'FATAL', 'SEVERE')")
+        else:
+            conditions.append("UPPER(level) = ?")
+            params.append(lvl)
+
+    if service and service.strip().upper() not in ("ALL", "ALL SERVICES", ""):
+        conditions.append("service = ?")
+        params.append(service.strip())
+
+    if upload_id and upload_id.strip().upper() not in ("ALL", "ALL UPLOADS", ""):
+        conditions.append("upload_id = ?")
+        params.append(upload_id.strip())
+
+    where_str = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+    return where_str, params
+
+
+def count_logs(
+    search: Optional[str] = None,
+    level: Optional[str] = None,
+    service: Optional[str] = None,
+    upload_id: Optional[str] = None
+) -> int:
+    """
+    Counts total log records matching the specified search terms and filter criteria.
+    """
+    init_db()
+    where_str, params = _build_where_clause(search, level, service, upload_id)
+    sql = f"SELECT COUNT(*) FROM logs {where_str}"
+
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(sql, params)
+        row = cursor.fetchone()
+        return row[0] if row else 0
+    finally:
+        conn.close()
+
+
+def search_logs(
+    page: int = 1,
+    limit: int = 20,
+    search: Optional[str] = None,
+    level: Optional[str] = None,
+    service: Optional[str] = None,
+    upload_id: Optional[str] = None,
+    sort: str = "desc"
+) -> List[Dict[str, Any]]:
+    """
+    Searches and paginates stored logs based on filters, search query, and sort order.
+    """
+    init_db()
+    where_str, params = _build_where_clause(search, level, service, upload_id)
+
+    safe_page = max(1, page)
+    safe_limit = max(1, min(limit, 500))
+    offset = (safe_page - 1) * safe_limit
+
+    sort_direction = "ASC" if sort.strip().lower() == "asc" else "DESC"
+
+    sql = f"""
+        SELECT id, upload_id, timestamp, level, service, message, created_at
+        FROM logs
+        {where_str}
+        ORDER BY id {sort_direction}
+        LIMIT ? OFFSET ?
+    """
+    params.extend([safe_limit, offset])
+
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(sql, params)
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def get_services() -> List[str]:
+    """
+    Retrieves a list of distinct non-empty service names present in the database.
+    """
+    init_db()
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT DISTINCT TRIM(service) as service
+            FROM logs
+            WHERE service IS NOT NULL AND TRIM(service) != ''
+            ORDER BY service ASC
+        """)
+        rows = cursor.fetchall()
+        return [row["service"] for row in rows]
+    finally:
+        conn.close()
+
+
+def get_upload_ids() -> List[str]:
+    """
+    Retrieves a list of distinct upload_id values present in the database.
+    """
+    init_db()
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT DISTINCT upload_id
+            FROM logs
+            WHERE upload_id IS NOT NULL AND upload_id != ''
+            ORDER BY id DESC
+        """)
+        rows = cursor.fetchall()
+        return [row["upload_id"] for row in rows]
     finally:
         conn.close()
 

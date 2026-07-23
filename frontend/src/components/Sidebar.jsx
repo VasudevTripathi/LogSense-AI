@@ -5,6 +5,7 @@ export default function Sidebar() {
   const navItems = [
     { label: 'Dashboard', path: '/', icon: 'dashboard' },
     { label: 'Upload Logs', path: '/upload', icon: 'upload_file' },
+    { label: 'Log Explorer', path: '/explorer', icon: 'travel_explore' },
     { label: 'AI Analysis', path: '/analysis', icon: 'analytics' },
     { label: 'AI Chat', path: '/chat', icon: 'chat_bubble' },
   ];
