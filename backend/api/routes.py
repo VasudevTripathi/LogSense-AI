@@ -1,7 +1,8 @@
 import os
 import uuid
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict, Any
+from pydantic import BaseModel
 from fastapi import APIRouter, File, UploadFile, HTTPException, Query, status
 from parser.log_parser import parse_log_file, parse_log_content
 from database.operations import (
@@ -13,6 +14,7 @@ from database.operations import (
     get_upload_ids,
 )
 from services.analytics import generate_dashboard_metrics
+from services.analysis import generate_incident_report
 
 router = APIRouter()
 
@@ -22,6 +24,10 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 ALLOWED_EXTENSIONS = {".log", ".txt", ".csv"}
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB limit
+
+
+class AnalyzeRequest(BaseModel):
+    upload_id: Optional[str] = None
 
 
 def sync_stored_logs_from_uploads() -> None:
@@ -175,14 +181,15 @@ def get_logs_meta():
 
 
 @router.post("/analyze")
-def analyze_logs():
-    return {
-        "status": "success",
-        "message": "AI Analysis initiated (mock)",
-        "analysis_id": "anlz-mock-8842",
-        "confidence": "96%",
-        "root_cause": "Database connection pool exhaustion in auth-service"
-    }
+def analyze_logs(payload: Optional[AnalyzeRequest] = None):
+    """
+    Triggers the Incident Analysis Engine and returns a structured incident analysis report.
+    Accepts optional upload_id to analyze a specific upload batch.
+    """
+    sync_stored_logs_from_uploads()
+    upload_id = payload.upload_id if payload else None
+    report = generate_incident_report(upload_id=upload_id)
+    return report
 
 
 @router.post("/chat")
