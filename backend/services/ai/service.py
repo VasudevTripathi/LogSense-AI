@@ -74,9 +74,52 @@ class AIService:
             tokens_used=completion["tokens_used"]
         )
 
-    def process_chat(self, request: AIChatRequest) -> AIChatResponse:
+    def _build_fallback_response(self, report: Dict[str, Any], question: str) -> str:
+        """
+        Generates a deterministic SRE diagnostic response when external AI providers hit rate limits or quota caps.
+        """
+        summary = report.get("summary", {}) if isinstance(report.get("summary"), dict) else {}
+        root_cause = report.get("root_cause", {}) if isinstance(report.get("root_cause"), dict) else {}
+        recs = report.get("recommendations", [])
+        services = report.get("affected_services", [])
+
+        lines = []
+        lines.append("> ℹ️ **Notice**: OpenAI API rate limit / quota exceeded. Displaying rule-based SRE diagnostic analysis based on your stored log report:\n")
+
+        q_lower = (question or "").lower()
+        if "root cause" in q_lower or "why" in q_lower or "explain" in q_lower:
+            lines.append("### Root Cause Analysis")
+            lines.append(f"**Primary Summary**: {root_cause.get('summary', 'Operational failure detected.')}")
+            lines.append(f"**Affected Microservice**: `{root_cause.get('service', 'unknown')}`")
+            lines.append(f"**Category**: `{root_cause.get('category', 'UNKNOWN')}`")
+            lines.append(f"**Details**: {root_cause.get('explanation', 'N/A')}")
+        elif "summar" in q_lower:
+            lines.append("### Executive Incident Summary")
+            lines.append(f"- **Overall Status**: {summary.get('overall_status', 'CRITICAL')}")
+            lines.append(f"- **Primary Root Cause**: {root_cause.get('summary', 'N/A')}")
+            lines.append(f"- **Affected Services**: {', '.join(services) if services else 'None'}")
+        elif "service" in q_lower or "failed" in q_lower:
+            lines.append("### Service Failure Correlation")
+            lines.append(f"The primary failing microservice identified by log signatures is `{root_cause.get('service', 'unknown')}`.")
+            if services:
+                lines.append(f"Infrastructure scope affected: {', '.join([f'`{s}`' for s in services])}.")
+        else:
+            lines.append("### Diagnostic Overview")
+            lines.append(f"**Root Cause**: {root_cause.get('summary', 'Operational failure detected.')}")
+            lines.append(f"**Microservice**: `{root_cause.get('service', 'unknown')}`")
+            lines.append(f"**Explanation**: {root_cause.get('explanation', 'N/A')}")
+
+        if recs and isinstance(recs, list):
+            lines.append("\n### Recommended Remediation Steps")
+            for i, r in enumerate(recs, 1):
+                lines.append(f"{i}. {r}")
+
+        return "\n".join(lines)
+
+    def process_chat(self, request: AIChatRequest, allow_fallback: bool = True) -> AIChatResponse:
         """
         Orchestrates an interactive AI chat turn based on an incident report context.
+        Falls back to rule-based analysis if external AI rate limits or quotas are reached.
         """
         report_to_use = (
             sanitize_incident_report(request.incident_report)
@@ -98,13 +141,24 @@ class AIService:
             user_message=request.message
         )
 
-        completion = self.client.generate_completion(messages=messages)
+        try:
+            completion = self.client.generate_completion(messages=messages)
+            return AIChatResponse(
+                response=completion["content"],
+                model_used=completion["model_used"],
+                tokens_used=completion["tokens_used"]
+            )
+        except OpenAIClientError as e:
+            err_msg = str(e)
+            if allow_fallback and ("Rate limit" in err_msg or "rate_limit" in err_msg.lower() or "429" in err_msg or "quota" in err_msg.lower()):
+                fallback_text = self._build_fallback_response(report_to_use, request.message)
+                return AIChatResponse(
+                    response=fallback_text,
+                    model_used="logsense-rule-engine (rate-limit fallback)",
+                    tokens_used={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+                )
+            raise
 
-        return AIChatResponse(
-            response=completion["content"],
-            model_used=completion["model_used"],
-            tokens_used=completion["tokens_used"]
-        )
 
 
 def get_ai_service(client: Optional[OpenAIClient] = None, config: Optional[AIConfig] = None) -> AIService:

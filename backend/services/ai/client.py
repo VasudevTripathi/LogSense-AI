@@ -72,12 +72,15 @@ class OpenAIClient:
         target_temp = temperature if temperature is not None else self.config.temperature
         target_max_tokens = max_tokens if max_tokens is not None else self.config.max_tokens
 
+        if not self.config.is_configured():
+            raise OpenAIClientError("OPENAI_API_KEY is not configured.")
+        if not OPENAI_AVAILABLE:
+            raise OpenAIClientError("The 'openai' library is not installed.")
+
         if self._client is None:
-            if not self.config.is_configured():
-                raise OpenAIClientError("OPENAI_API_KEY is not configured.")
-            if not OPENAI_AVAILABLE:
-                raise OpenAIClientError("The 'openai' library is not installed.")
             self._client = OpenAI(api_key=self.config.api_key)
+
+
 
         attempt = 0
         last_exception = None

@@ -1,0 +1,17 @@
+# Environment files
+.env
+**/.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# SQLite
+*.db
+
+# Node
+node_modules/
+
+# Uploads
+backend/uploads/

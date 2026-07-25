@@ -73,6 +73,8 @@ class AIConfig:
         self.api_key: str = os.getenv("OPENAI_API_KEY", "").strip()
         self.model: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip() or "gpt-4o-mini"
 
+
+
         raw_max_tokens = os.getenv("OPENAI_MAX_TOKENS", "1000")
         try:
             self.max_tokens: int = int(raw_max_tokens)
@@ -96,8 +98,10 @@ class AIConfig:
             raise ValueError(f"OPENAI_TEMPERATURE must be between 0.0 and 2.0, got {self.temperature}.")
 
     def is_configured(self) -> bool:
-        """Returns True if OPENAI_API_KEY is populated."""
-        return bool(self.api_key)
+        """
+        Returns True if OPENAI_API_KEY is populated and not a placeholder.
+        """
+        return bool(self.api_key and self.api_key != "your_openai_api_key_here")
 
 
 def get_app_config() -> AppConfig:
