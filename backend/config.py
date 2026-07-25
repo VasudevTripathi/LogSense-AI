@@ -1,17 +1,63 @@
 """
-LogSense AI - AI Configuration Module
-Loads environment variables using python-dotenv and validates AI settings.
+LogSense AI - Central Configuration Module
+Loads environment variables using python-dotenv and provides validated settings for server, AI, and security.
 """
 
 import os
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 from dotenv import load_dotenv
+
+# Application Version Constant
+APP_VERSION = "1.0.0"
 
 # Automatically locate and load .env from backend directory
 BASE_DIR = Path(__file__).resolve().parent
 ENV_PATH = BASE_DIR / ".env"
 load_dotenv(dotenv_path=ENV_PATH)
+
+
+class AppConfig:
+    """
+    Application-wide environment and deployment settings.
+    """
+    def __init__(self, validate_on_init: bool = True):
+        self.version: str = APP_VERSION
+        self.environment: str = os.getenv("ENVIRONMENT", "development").strip().lower()
+
+        raw_port = os.getenv("PORT", "8000")
+        try:
+            self.port: int = int(raw_port)
+        except (ValueError, TypeError):
+            raise ValueError(f"Invalid PORT value: '{raw_port}'. Must be an integer.")
+
+        self.host: str = os.getenv("HOST", "0.0.0.0").strip() or "0.0.0.0"
+        self.raw_cors_origins: str = os.getenv("CORS_ORIGINS", "").strip()
+
+        if validate_on_init:
+            self.validate()
+
+    def validate(self) -> None:
+        """Validates general application environment settings."""
+        valid_envs = {"development", "production", "testing", "staging"}
+        if self.environment not in valid_envs:
+            raise ValueError(f"Invalid ENVIRONMENT '{self.environment}'. Must be one of {valid_envs}.")
+        if not (1 <= self.port <= 65535):
+            raise ValueError(f"Invalid PORT number: {self.port}. Must be between 1 and 65535.")
+
+    def get_cors_origins(self) -> List[str]:
+        """Returns list of allowed CORS origins."""
+        if not self.raw_cors_origins:
+            return [
+                "http://localhost:5173",
+                "http://localhost:3000",
+                "http://127.0.0.1:5173",
+                "http://127.0.0.1:3000",
+                "http://localhost:8000"
+            ]
+        if self.raw_cors_origins == "*":
+            return ["*"]
+        return [origin.strip() for origin in self.raw_cors_origins.split(",") if origin.strip()]
 
 
 class AIConfig:
@@ -43,23 +89,22 @@ class AIConfig:
             self.validate()
 
     def validate(self) -> None:
-        """
-        Validates configuration fields.
-        """
+        """Validates AI configuration fields."""
         if self.max_tokens <= 0:
             raise ValueError(f"OPENAI_MAX_TOKENS must be greater than 0, got {self.max_tokens}.")
         if not (0.0 <= self.temperature <= 2.0):
             raise ValueError(f"OPENAI_TEMPERATURE must be between 0.0 and 2.0, got {self.temperature}.")
 
     def is_configured(self) -> bool:
-        """
-        Returns True if OPENAI_API_KEY is populated.
-        """
+        """Returns True if OPENAI_API_KEY is populated."""
         return bool(self.api_key)
 
 
+def get_app_config() -> AppConfig:
+    """Instantiates and returns a validated AppConfig object."""
+    return AppConfig(validate_on_init=True)
+
+
 def get_ai_config() -> AIConfig:
-    """
-    Helper function to instantiate and return a validated AIConfig object.
-    """
+    """Instantiates and returns a validated AIConfig object."""
     return AIConfig(validate_on_init=True)

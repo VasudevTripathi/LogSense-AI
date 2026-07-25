@@ -25,6 +25,8 @@ from services.ai import (
     OpenAIClientError,
     AIConfig
 )
+from config import APP_VERSION, get_app_config, get_ai_config
+
 
 router = APIRouter()
 
@@ -69,10 +71,46 @@ def sync_stored_logs_from_uploads() -> None:
 
 @router.get("/")
 def get_root():
+    app_cfg = get_app_config()
     return {
         "status": "success",
         "message": "Welcome to LogSense AI API",
-        "version": "1.0.0"
+        "version": APP_VERSION,
+        "environment": app_cfg.environment
+    }
+
+
+@router.get("/health")
+def get_health():
+    """
+    Production health check endpoint.
+    Verifies API server status, database connection log count, and AI service configuration.
+    """
+    timestamp_str = datetime.now(timezone.utc).isoformat()
+    app_cfg = get_app_config()
+    ai_cfg = get_ai_config()
+
+    # Check database status
+    db_status = "connected"
+    total_logs = 0
+    try:
+        total_logs = count_logs()
+    except Exception as e:
+        db_status = f"error: {str(e)}"
+
+    return {
+        "status": "healthy",
+        "timestamp": timestamp_str,
+        "version": APP_VERSION,
+        "environment": app_cfg.environment,
+        "database": {
+            "status": db_status,
+            "total_logs": total_logs
+        },
+        "ai_service": {
+            "status": "configured" if ai_cfg.is_configured() else "unconfigured",
+            "model": ai_cfg.model
+        }
     }
 
 
