@@ -30,10 +30,9 @@ export default function Sidebar() {
             to={item.path}
             end={item.path === '/'}
             className={({ isActive }) =>
-              `flex items-center gap-md px-md py-sm rounded-lg transition-colors duration-150 active:scale-[0.98] ${
-                isActive
-                  ? 'bg-secondary-container dark:bg-secondary text-on-secondary-container dark:text-on-secondary font-medium'
-                  : 'text-on-surface-variant dark:text-outline-variant hover:bg-surface-container-high dark:hover:bg-surface-container-highest'
+              `flex items-center gap-md px-md py-sm rounded-lg transition-colors duration-150 active:scale-[0.98] ${isActive
+                ? 'bg-secondary-container dark:bg-secondary text-on-secondary-container dark:text-on-secondary font-medium'
+                : 'text-on-surface-variant dark:text-outline-variant hover:bg-surface-container-high dark:hover:bg-surface-container-highest'
               }`
             }
           >
@@ -53,8 +52,8 @@ export default function Sidebar() {
           />
         </div>
         <div className="flex-1 min-w-0">
-          <p className="font-body-sm text-body-sm truncate text-on-surface font-medium">Alex Dev</p>
-          <p className="font-label-caps text-[10px] truncate text-on-surface-variant opacity-75">alex@company.com</p>
+          <p className="font-body-sm text-body-sm truncate text-on-surface font-medium">Vasudev</p>
+          <p className="font-label-caps text-[10px] truncate text-on-surface-variant opacity-75">vasudevtripathi006@gmail.com</p>
         </div>
       </div>
     </aside>
