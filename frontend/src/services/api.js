@@ -19,4 +19,6 @@ export const apiService = {
     }),
   analyzeLogs: (data) => apiClient.post('/analyze', data),
   sendChat: (data) => apiClient.post('/chat', data),
+  sendAIChat: (data) => apiClient.post('/ai/chat', data),
 };
+
