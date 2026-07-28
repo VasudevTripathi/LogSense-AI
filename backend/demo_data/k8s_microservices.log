@@ -1,0 +1,8 @@
+2026-07-28T11:00:00.000Z INFO     k8s-cluster          Pod scheduled | pod=auth-service-7f8d9b-x92zk node=node-us-east-1a
+2026-07-28T11:00:05.100Z INFO     auth-service         Auth service started successfully on port 8080 | workers=4
+2026-07-28T11:01:10.250Z WARN     auth-service         High memory consumption | container_memory_mb=480 limit_mb=512
+2026-07-28T11:01:35.000Z ERROR    k8s-cluster          Pod OOMKilled | pod=auth-service-7f8d9b-x92zk container=auth-service exit_code=137
+2026-07-28T11:01:40.000Z WARN     k8s-cluster          Restarting failed container | pod=auth-service-7f8d9b-x92zk restart_count=1
+2026-07-28T11:02:00.300Z ERROR    api-gateway          Upstream auth-service unreachable | target=http://10.244.1.15:8080 status=503 Service Unavailable
+2026-07-28T11:02:15.800Z ERROR    user-service         Token verification failed | error="Auth service connection refused"
+2026-07-28T11:03:00.000Z INFO     k8s-cluster          Pod readiness probe succeeded | pod=auth-service-7f8d9b-x92zk

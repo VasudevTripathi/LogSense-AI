@@ -16,6 +16,8 @@ from database.operations import (
     get_services,
     get_upload_ids,
     get_logs_by_upload,
+    clear_logs,
+    delete_logs_by_upload,
 )
 from services.analytics import generate_dashboard_metrics
 from services.analysis import generate_incident_report
@@ -382,3 +384,138 @@ def chat_with_ai(payload: Optional[AIChatCopilotRequest] = None):
             "total": 0
         }
     }
+
+
+@router.delete("/logs")
+def delete_all_logs():
+    """
+    Data Management: Clears all log records from the database and removes cached upload files.
+    """
+    try:
+        deleted_count = clear_logs()
+        # Clean cached upload files in UPLOAD_DIR
+        if UPLOAD_DIR.exists():
+            for f in UPLOAD_DIR.glob("*"):
+                if f.is_file() and f.name != ".gitkeep":
+                    try:
+                        f.unlink()
+                    except Exception:
+                        pass
+        return {
+            "status": "success",
+            "message": "All logs cleared successfully",
+            "deleted_count": deleted_count
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to clear logs: {str(e)}"
+        )
+
+
+@router.delete("/uploads/{upload_id}")
+def delete_upload_batch(upload_id: str):
+    """
+    Data Management: Deletes all log records for a specific upload_id.
+    """
+    if not upload_id or not upload_id.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Upload ID is required."
+        )
+
+    clean_upload_id = upload_id.strip()
+    logs_exist = get_logs_by_upload(clean_upload_id)
+    if not logs_exist:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Upload ID '{clean_upload_id}' not found."
+        )
+
+    try:
+        deleted_count = delete_logs_by_upload(clean_upload_id)
+
+        # Attempt to clean matching file in UPLOAD_DIR if filename matches or file contains upload_id
+        if UPLOAD_DIR.exists():
+            for f in UPLOAD_DIR.glob("*"):
+                if f.is_file() and f.name != ".gitkeep":
+                    if clean_upload_id in f.name or f.stem in clean_upload_id:
+                        try:
+                            f.unlink()
+                        except Exception:
+                            pass
+
+        return {
+            "status": "success",
+            "message": f"Upload '{clean_upload_id}' deleted successfully",
+            "upload_id": clean_upload_id,
+            "deleted_count": deleted_count
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete upload '{clean_upload_id}': {str(e)}"
+        )
+
+
+@router.post("/demo/load")
+def load_demo_dataset():
+    """
+    Demo Mode: Loads pre-configured demonstration log datasets into the database.
+    """
+    DEMO_DIR = Path(__file__).resolve().parent.parent / "demo_data"
+    loaded_upload_ids = []
+    total_inserted = 0
+
+    files_to_load = []
+    if DEMO_DIR.exists():
+        files_to_load = [f for f in DEMO_DIR.glob("*") if f.is_file() and f.suffix.lower() in ALLOWED_EXTENSIONS]
+
+    # Fallback to existing sample uploads if demo_data directory is empty
+    if not files_to_load and UPLOAD_DIR.exists():
+        files_to_load = [f for f in UPLOAD_DIR.glob("*") if f.is_file() and f.suffix.lower() in ALLOWED_EXTENSIONS and f.name != ".gitkeep"]
+
+    if not files_to_load:
+        # Generate inline demo log records if no physical demo files are found
+        inline_content = (
+            "2026-07-28T10:00:00.000Z INFO auth-service Auth service initialized\n"
+            "2026-07-28T10:01:00.000Z ERROR payment-gateway Payment timeout after 5000ms\n"
+            "2026-07-28T10:02:00.000Z CRITICAL db-pool Connection pool exhausted max=100\n"
+        ).encode('utf-8')
+        upload_id = f"demo_inline_{uuid.uuid4().hex[:6]}"
+        records = parse_log_content(inline_content, "demo_system.log")
+        inserted = insert_logs(records, upload_id)
+        return {
+            "status": "success",
+            "message": "Demo data loaded successfully",
+            "upload_ids": [upload_id],
+            "total_logs": inserted
+        }
+
+    for file_path in files_to_load:
+        try:
+            content = file_path.read_bytes()
+            records = parse_log_content(content, file_path.name)
+            if records:
+                safe_name = file_path.stem.replace(".", "_").replace(" ", "_")
+                upload_id = f"demo_{safe_name}_{uuid.uuid4().hex[:6]}"
+                inserted = insert_logs(records, upload_id)
+                loaded_upload_ids.append(upload_id)
+                total_inserted += inserted
+
+                # Save copy to upload dir
+                save_path = UPLOAD_DIR / file_path.name
+                if not save_path.exists():
+                    save_path.write_bytes(content)
+        except Exception as e:
+            logger.warning(f"Error loading demo dataset file '{file_path.name}': {str(e)}")
+
+    return {
+        "status": "success",
+        "message": "Demo datasets loaded successfully",
+        "upload_ids": loaded_upload_ids,
+        "total_logs": total_inserted
+    }
+
