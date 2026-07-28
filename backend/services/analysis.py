@@ -4,9 +4,11 @@ Produces structured incident reports using deterministic rule-based logic from S
 """
 
 import uuid
+import re
 from typing import List, Dict, Any, Optional
 from collections import Counter, defaultdict
 from database.operations import get_all_logs, get_logs_by_upload
+from parser.log_parser import is_valid_service_name
 
 # Category Keyword Mapping Dictionary
 CATEGORY_KEYWORDS: Dict[str, List[str]] = {
@@ -105,6 +107,7 @@ def classify_log_category(log: Dict[str, Any]) -> str:
 def normalize_logs(logs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     Sanitizes and enriches raw log dicts with normalized level, timestamp, service, and category.
+    Strictly filters out invalid service names or timestamps.
     """
     normalized = []
     for log in logs:
@@ -118,7 +121,9 @@ def normalize_logs(logs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
         service_str = log.get("service") or "unknown"
         if isinstance(service_str, str):
-            service_str = service_str.strip() or "unknown"
+            service_str = service_str.strip()
+        if not is_valid_service_name(service_str):
+            service_str = "unknown"
 
         timestamp_str = log.get("timestamp") or "N/A"
         message_str = log.get("message") or ""
@@ -149,6 +154,8 @@ def aggregate_errors(logs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             continue
 
         srv = log.get("service") or "unknown"
+        if not is_valid_service_name(srv):
+            srv = "unknown"
         msg = log.get("message") or ""
         ts = log.get("timestamp") or "N/A"
         cat = log.get("category") or "UNKNOWN"
@@ -190,13 +197,14 @@ def aggregate_errors(logs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 def detect_affected_services(logs: List[Dict[str, Any]]) -> List[str]:
     """
     Identifies all unique services that experienced errors or warnings.
+    Excludes invalid service names or timestamps.
     """
     affected = set()
     for log in logs:
         lvl = log.get("level", "")
         srv = log.get("service")
         if lvl in ("ERROR", "ERR", "CRITICAL", "FATAL", "SEVERE", "WARN", "WARNING"):
-            if isinstance(srv, str) and srv.strip() and srv.strip().lower() != "unknown":
+            if isinstance(srv, str) and is_valid_service_name(srv):
                 affected.add(srv.strip())
     return sorted(list(affected))
 
@@ -209,9 +217,11 @@ def build_incident_timeline(logs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     for log in logs:
         lvl = log.get("level", "")
         if lvl in ("ERROR", "ERR", "CRITICAL", "FATAL", "SEVERE", "WARN", "WARNING"):
+            srv = log.get("service")
+            valid_srv = srv if is_valid_service_name(srv) else "unknown"
             timeline_events.append({
                 "timestamp": log.get("timestamp") or "N/A",
-                "service": log.get("service") or "unknown",
+                "service": valid_srv,
                 "level": lvl,
                 "message": log.get("message") or ""
             })
@@ -245,15 +255,42 @@ def determine_root_cause(
     top_error = aggregated_errors[0]
     category = top_error.get("category", "UNKNOWN")
     service = top_error.get("service", "unknown")
+    if not is_valid_service_name(service):
+        service = "unknown"
+
     level = top_error.get("level", "ERROR")
     count = top_error.get("count", 1)
     first_seen = top_error.get("first_seen", "N/A")
     primary_msg = top_error.get("message", "")
 
-    summary = f"{category.replace('_', ' ').title()} failure in {service}"
+    # Build specific, descriptive root cause summary from primary error pattern
+    clean_msg = primary_msg.strip()
+    summary_title = ""
+
+    if "error=" in clean_msg.lower():
+        err_match = re.search(r'error=["\']?([^"\'\n]+)["\']?', clean_msg, re.IGNORECASE)
+        if err_match:
+            summary_title = err_match.group(1).strip()
+
+    if not summary_title:
+        main_clause = clean_msg.split("|")[0].split(";")[0].strip()
+        if len(main_clause) > 55:
+            summary_title = main_clause[:55] + "..."
+        else:
+            summary_title = main_clause
+
+    if not summary_title:
+        summary_title = f"{category.replace('_', ' ').title()} Failure"
+
+    if service != "unknown" and service.lower() not in summary_title.lower():
+        summary = f"{summary_title} in {service}"
+    else:
+        summary = summary_title
+
     explanation = (
-        f"Identified as root cause due to highest severity ({level}) "
-        f"and {count} occurrence(s) initiated at {first_seen}."
+        f"Identified as primary root cause due to highest severity ({level}) "
+        f"and {count} occurrence(s) initiated at {first_seen}. "
+        f"Service '{service}' triggered '{category}' category diagnostic signature."
     )
 
     return {

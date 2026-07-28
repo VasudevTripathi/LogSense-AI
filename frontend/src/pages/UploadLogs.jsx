@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { apiService } from '../services/api';
 
 export default function UploadLogs() {
@@ -6,13 +6,125 @@ export default function UploadLogs() {
   const [isDragOver, setIsDragOver] = useState(false);
   const [validationError, setValidationError] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [demoLoading, setDemoLoading] = useState(false);
   const [parseResult, setParseResult] = useState(null);
   const [selectedLevelFilter, setSelectedLevelFilter] = useState('All Levels');
+
+  // Danger Zone & Metadata state
+  const [availableUploadIds, setAvailableUploadIds] = useState([]);
+  const [selectedUploadToDelete, setSelectedUploadToDelete] = useState('');
+  const [confirmModal, setConfirmModal] = useState({ isOpen: false, type: 'all', uploadId: '', title: '', message: '' });
+  const [notification, setNotification] = useState(null);
+  const [actionLoading, setActionLoading] = useState(false);
 
   const fileInputRef = useRef(null);
 
   const ALLOWED_EXTENSIONS = ['.log', '.txt', '.csv'];
   const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
+
+  // Fetch available upload IDs for deletion dropdown
+  const fetchUploadMetadata = useCallback(async () => {
+    try {
+      const res = await apiService.getLogMetadata();
+      if (res.data && res.data.status === 'success') {
+        const uids = res.data.upload_ids || [];
+        setAvailableUploadIds(uids);
+        if (uids.length > 0 && !selectedUploadToDelete) {
+          setSelectedUploadToDelete(uids[0]);
+        } else if (uids.length === 0) {
+          setSelectedUploadToDelete('');
+        }
+      }
+    } catch {
+      // background fetch error ignore
+    }
+  }, [selectedUploadToDelete]);
+
+  useEffect(() => {
+    fetchUploadMetadata();
+  }, [fetchUploadMetadata]);
+
+  const handleLoadDemoData = async () => {
+    setDemoLoading(true);
+    setValidationError(null);
+    setNotification(null);
+    try {
+      const res = await apiService.loadDemoData();
+      if (res.data && res.data.status === 'success') {
+        setNotification({
+          type: 'success',
+          message: `Demo dataset loaded successfully (${res.data.total_logs} logs ingested).`
+        });
+        window.dispatchEvent(new CustomEvent('logs-updated'));
+        fetchUploadMetadata();
+      } else {
+        setValidationError('Failed to load demo datasets.');
+      }
+    } catch (err) {
+      setValidationError(err.response?.data?.detail || err.message || 'Error loading demo data.');
+    } finally {
+      setDemoLoading(false);
+    }
+  };
+
+  const openDeleteAllModal = () => {
+    setConfirmModal({
+      isOpen: true,
+      type: 'all',
+      title: 'Delete All System Logs?',
+      message: 'This action will permanently erase ALL logs from SQLite database and clear uploaded cache files. This cannot be undone.',
+    });
+  };
+
+  const openDeleteUploadModal = () => {
+    if (!selectedUploadToDelete) return;
+    setConfirmModal({
+      isOpen: true,
+      type: 'upload',
+      uploadId: selectedUploadToDelete,
+      title: `Delete Upload '${selectedUploadToDelete}'?`,
+      message: `This action will permanently delete all log records associated with upload ID '${selectedUploadToDelete}'.`,
+    });
+  };
+
+  const handleExecuteDelete = async () => {
+    setActionLoading(true);
+    setNotification(null);
+    setValidationError(null);
+
+    try {
+      if (confirmModal.type === 'all') {
+        const res = await apiService.deleteLogs();
+        if (res.data && res.data.status === 'success') {
+          setNotification({
+            type: 'success',
+            message: `All logs successfully deleted (${res.data.deleted_count} logs removed).`
+          });
+          setParseResult(null);
+          setSelectedFile(null);
+        }
+      } else if (confirmModal.type === 'upload') {
+        const res = await apiService.deleteUpload(confirmModal.uploadId);
+        if (res.data && res.data.status === 'success') {
+          setNotification({
+            type: 'success',
+            message: `Successfully deleted upload '${confirmModal.uploadId}' (${res.data.deleted_count} logs removed).`
+          });
+          if (parseResult?.upload_id === confirmModal.uploadId) {
+            setParseResult(null);
+          }
+        }
+      }
+      window.dispatchEvent(new CustomEvent('logs-updated'));
+      await fetchUploadMetadata();
+    } catch (err) {
+      const msg = err.response?.data?.detail || err.message || 'Deletion failed.';
+      setNotification({ type: 'error', message: msg });
+    } finally {
+      setActionLoading(false);
+      setConfirmModal({ isOpen: false, type: 'all', uploadId: '', title: '', message: '' });
+    }
+  };
 
   const validateAndSetFile = (file) => {
     setValidationError(null);
@@ -150,13 +262,48 @@ export default function UploadLogs() {
         className="hidden"
       />
 
-      {/* Page Header */}
-      <div>
-        <h2 className="font-headline-lg text-headline-lg font-bold text-on-surface">Upload Logs</h2>
-        <p className="font-body-lg text-body-lg text-on-surface-variant mt-sm max-w-2xl">
-          Upload application log files for parsing and AI-powered analysis.
-        </p>
+      {/* Page Header with Demo Mode Action */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-md">
+        <div>
+          <h2 className="font-headline-lg text-headline-lg font-bold text-on-surface">Upload Logs</h2>
+          <p className="font-body-lg text-body-lg text-on-surface-variant mt-sm max-w-2xl">
+            Upload application log files for parsing and AI-powered analysis, or load demo datasets for instant evaluation.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={handleLoadDemoData}
+          disabled={demoLoading}
+          className="font-label-md text-label-md px-md py-sm bg-tertiary-container text-on-tertiary-container rounded-lg hover:brightness-110 transition-all flex items-center gap-xs shadow-sm cursor-pointer disabled:opacity-50 self-start md:self-auto"
+        >
+          <span className={`material-symbols-outlined text-body-md ${demoLoading ? 'animate-spin' : ''}`}>
+            {demoLoading ? 'sync' : 'auto_awesome'}
+          </span>
+          {demoLoading ? 'Loading Demo Data...' : 'Load Demo Data'}
+        </button>
       </div>
+
+      {/* Notification Toast Banner */}
+      {notification && (
+        <div className={`p-md rounded-xl border flex items-center justify-between animate-fade-in-up ${
+          notification.type === 'success'
+            ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+            : 'bg-error-container/20 border-error/30 text-error'
+        }`}>
+          <div className="flex items-center gap-sm font-body-sm text-body-sm">
+            <span className="material-symbols-outlined">
+              {notification.type === 'success' ? 'check_circle' : 'error'}
+            </span>
+            <span>{notification.message}</span>
+          </div>
+          <button
+            onClick={() => setNotification(null)}
+            className="hover:opacity-80 p-xs cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-sm">close</span>
+          </button>
+        </div>
+      )}
 
       {/* Validation Error Banner */}
       {validationError && (
@@ -358,12 +505,12 @@ export default function UploadLogs() {
       </div>
 
       {/* Bottom Actions */}
-      <div className="flex justify-end items-center gap-md pt-md border-t border-outline-variant/20 pb-xl">
+      <div className="flex justify-end items-center gap-md pt-md border-t border-outline-variant/20">
         <button
           onClick={handleClearUpload}
           className="px-lg py-sm font-body-sm text-body-sm font-medium border border-outline-variant text-on-surface rounded-lg hover:bg-surface-container transition-colors active:scale-95 flex items-center gap-xs cursor-pointer"
         >
-          <span className="material-symbols-outlined text-[18px]">delete</span> Clear Upload
+          <span className="material-symbols-outlined text-[18px]">delete</span> Clear Selection
         </button>
         <button
           disabled={loading || !selectedFile}
@@ -376,6 +523,114 @@ export default function UploadLogs() {
           {loading ? 'Parsing...' : 'Parse Logs'}
         </button>
       </div>
+
+      {/* Danger Zone Section */}
+      <div className="mt-xl pt-lg border-t border-error/30">
+        <div className="bg-error-container/10 border border-error/30 rounded-xl p-lg space-y-md">
+          <div className="flex items-center gap-sm">
+            <span className="material-symbols-outlined text-error text-headline-sm">warning</span>
+            <div>
+              <h3 className="font-headline-sm text-headline-sm font-bold text-on-surface">Danger Zone</h3>
+              <p className="font-body-sm text-body-sm text-on-surface-variant mt-xs">
+                Destructive data management actions. Operations here are irreversible.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-md pt-sm border-t border-outline-variant/20">
+            {/* Action 1: Delete Specific Upload */}
+            <div className="bg-surface-container-low border border-outline-variant/30 rounded-lg p-md flex flex-col justify-between space-y-sm">
+              <div>
+                <h4 className="font-body-md text-body-md font-semibold text-on-surface">Delete Specific Upload Batch</h4>
+                <p className="font-body-sm text-body-sm text-on-surface-variant mt-xs">
+                  Remove all logs associated with a specific upload ID from the database.
+                </p>
+              </div>
+              <div className="flex items-center gap-sm mt-sm">
+                <select
+                  value={selectedUploadToDelete}
+                  onChange={(e) => setSelectedUploadToDelete(e.target.value)}
+                  disabled={availableUploadIds.length === 0}
+                  className="flex-1 bg-surface-container border border-outline-variant/50 rounded-lg py-xs px-sm font-body-sm text-body-sm text-on-surface focus:border-error focus:ring-1 focus:ring-error/50 h-9 cursor-pointer disabled:opacity-50"
+                >
+                  {availableUploadIds.length === 0 ? (
+                    <option value="">No uploads available</option>
+                  ) : (
+                    availableUploadIds.map((uid) => (
+                      <option key={uid} value={uid}>
+                        {uid}
+                      </option>
+                    ))
+                  )}
+                </select>
+                <button
+                  type="button"
+                  disabled={!selectedUploadToDelete}
+                  onClick={openDeleteUploadModal}
+                  className="px-md py-sm font-label-md text-label-md bg-error/20 text-error border border-error/40 rounded-lg hover:bg-error hover:text-white transition-colors cursor-pointer disabled:opacity-50 whitespace-nowrap"
+                >
+                  Delete Upload
+                </button>
+              </div>
+            </div>
+
+            {/* Action 2: Delete All Logs */}
+            <div className="bg-surface-container-low border border-outline-variant/30 rounded-lg p-md flex flex-col justify-between space-y-sm">
+              <div>
+                <h4 className="font-body-md text-body-md font-semibold text-on-surface">Clear All System Logs</h4>
+                <p className="font-body-sm text-body-sm text-on-surface-variant mt-xs">
+                  Purge all ingested log records and saved upload cache files from the application database.
+                </p>
+              </div>
+              <div className="mt-sm flex justify-end">
+                <button
+                  type="button"
+                  onClick={openDeleteAllModal}
+                  className="px-lg py-sm font-label-md text-label-md bg-error text-on-error rounded-lg hover:brightness-110 transition-all shadow-sm flex items-center gap-xs cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-body-md">delete_forever</span>
+                  Clear All Logs
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Confirmation Modal Dialog */}
+      {confirmModal.isOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-md animate-fade-in">
+          <div className="bg-surface-container-lowest border border-outline-variant rounded-2xl max-w-md w-full p-lg shadow-2xl space-y-md">
+            <div className="flex items-center gap-sm text-error">
+              <span className="material-symbols-outlined text-headline-md">warning</span>
+              <h3 className="font-headline-sm text-headline-sm font-bold text-on-surface">{confirmModal.title}</h3>
+            </div>
+            <p className="font-body-md text-body-md text-on-surface-variant">
+              {confirmModal.message}
+            </p>
+            <div className="flex justify-end items-center gap-sm pt-md border-t border-outline-variant/20">
+              <button
+                type="button"
+                disabled={actionLoading}
+                onClick={() => setConfirmModal({ isOpen: false, type: 'all', uploadId: '', title: '', message: '' })}
+                className="px-md py-sm font-label-md text-label-md border border-outline-variant rounded-lg text-on-surface hover:bg-surface-container cursor-pointer disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={actionLoading}
+                onClick={handleExecuteDelete}
+                className="px-lg py-sm font-label-md text-label-md bg-error text-on-error rounded-lg hover:brightness-110 transition-all shadow-sm flex items-center gap-xs cursor-pointer disabled:opacity-50"
+              >
+                {actionLoading && <span className="material-symbols-outlined text-body-md animate-spin">sync</span>}
+                {actionLoading ? 'Deleting...' : 'Confirm Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+

@@ -1,0 +1,12 @@
+2026-07-28T10:00:00.000Z INFO     checkout-service     Checkout service initializing | version=2.1.0 environment=production
+2026-07-28T10:00:01.120Z INFO     payment-gateway      Payment gateway handler initialized with primary provider StaxPay
+2026-07-28T10:00:05.450Z INFO     user-service         User session authenticated | user_id=usr_99214 ip=192.168.1.104
+2026-07-28T10:01:12.300Z INFO     checkout-service     Cart checkout initiated | cart_id=cart_88712 items=3 total=149.99
+2026-07-28T10:02:15.002Z WARN     payment-gateway      Payment gateway response delayed | latency_ms=4500 threshold_ms=2000
+2026-07-28T10:02:19.521Z ERROR    payment-gateway      Payment gateway connection timeout | gateway=StaxPay endpoint=https://api.staxpay.internal/v1/charge error="Connection timed out after 5000ms"
+2026-07-28T10:02:19.525Z ERROR    checkout-service     Failed to process payment for cart_88712 | status=504 Gateway Timeout
+2026-07-28T10:03:00.100Z ERROR    db-pool              PostgreSQL connection pool exhausted | active_connections=100 max_connections=100 waiting_requests=42
+2026-07-28T10:03:02.150Z CRITICAL checkout-service     Unhandled exception during checkout transaction rollback | OperationalError="psycopg2.OperationalError: FATAL: remaining connection slots are reserved for non-replication superuser connections"
+2026-07-28T10:03:15.890Z ERROR    inventory-service    Inventory release failed | order_id=ord_44102 error="Transaction deadlocked"
+2026-07-28T10:04:00.000Z WARN     api-gateway          High error rate detected on route /api/v1/checkout | HTTP 500 rate=78% threshold=5%
+2026-07-28T10:05:00.000Z INFO     alerting-system      PagerDuty incident triggered | ID=INC-9041 severity=HIGH title="Checkout Service Outage"

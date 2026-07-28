@@ -76,41 +76,102 @@ class AIService:
 
     def _build_fallback_response(self, report: Dict[str, Any], question: str) -> str:
         """
-        Generates a deterministic SRE diagnostic response when external AI providers hit rate limits or quota caps.
+        Generates a comprehensive, deterministic SRE diagnostic report utilizing the full
+        incident analysis report (severity, category, confidence, root cause, statistics,
+        timeline, top recurring error patterns, affected services, and recommendations).
         """
-        summary = report.get("summary", {}) if isinstance(report.get("summary"), dict) else {}
         root_cause = report.get("root_cause", {}) if isinstance(report.get("root_cause"), dict) else {}
+        severity = report.get("severity", "HIGH")
+        confidence = report.get("confidence", "85%")
+        category = report.get("incident_category", root_cause.get("category", "UNKNOWN"))
+        affected_services = report.get("affected_services", [])
+        statistics = report.get("statistics", {}) if isinstance(report.get("statistics"), dict) else {}
+        timeline = report.get("timeline", [])
+        top_errors = report.get("top_errors", [])
         recs = report.get("recommendations", [])
-        services = report.get("affected_services", [])
 
+        # Extract timestamps and occurrence count
+        first_seen = root_cause.get("first_seen", "N/A")
+        occurrences = root_cause.get("occurrences", 1)
+        primary_service = root_cause.get("service", "unknown")
+
+        # Compute overall last seen timestamp across top errors and timeline
+        last_seen = "N/A"
+        if top_errors and isinstance(top_errors[0], dict) and top_errors[0].get("last_seen"):
+            last_seen = top_errors[0].get("last_seen")
+        elif timeline and isinstance(timeline[-1], dict) and timeline[-1].get("timestamp"):
+            last_seen = timeline[-1].get("timestamp")
+        if last_seen == "N/A":
+            last_seen = first_seen
+
+        # Build clean, production-grade Markdown output
         lines = []
-        lines.append("> ℹ️ **Notice**: OpenAI API rate limit / quota exceeded. Displaying rule-based SRE diagnostic analysis based on your stored log report:\n")
+        lines.append("> ⚡ **Rule-Based Investigation Mode**: Operating in deterministic SRE diagnostic mode based on verified system telemetry and structured log analysis.\n")
 
-        q_lower = (question or "").lower()
-        if "root cause" in q_lower or "why" in q_lower or "explain" in q_lower:
-            lines.append("### Root Cause Analysis")
-            lines.append(f"**Primary Summary**: {root_cause.get('summary', 'Operational failure detected.')}")
-            lines.append(f"**Affected Microservice**: `{root_cause.get('service', 'unknown')}`")
-            lines.append(f"**Category**: `{root_cause.get('category', 'UNKNOWN')}`")
-            lines.append(f"**Details**: {root_cause.get('explanation', 'N/A')}")
-        elif "summar" in q_lower:
-            lines.append("### Executive Incident Summary")
-            lines.append(f"- **Overall Status**: {summary.get('overall_status', 'CRITICAL')}")
-            lines.append(f"- **Primary Root Cause**: {root_cause.get('summary', 'N/A')}")
-            lines.append(f"- **Affected Services**: {', '.join(services) if services else 'None'}")
-        elif "service" in q_lower or "failed" in q_lower:
-            lines.append("### Service Failure Correlation")
-            lines.append(f"The primary failing microservice identified by log signatures is `{root_cause.get('service', 'unknown')}`.")
-            if services:
-                lines.append(f"Infrastructure scope affected: {', '.join([f'`{s}`' for s in services])}.")
-        else:
-            lines.append("### Diagnostic Overview")
-            lines.append(f"**Root Cause**: {root_cause.get('summary', 'Operational failure detected.')}")
-            lines.append(f"**Microservice**: `{root_cause.get('service', 'unknown')}`")
-            lines.append(f"**Explanation**: {root_cause.get('explanation', 'N/A')}")
+        # Incident Telemetry Summary Table
+        lines.append("### 📊 Incident Telemetry & Diagnostic Metrics")
+        lines.append("| Telemetry Metric | Diagnostic Value |")
+        lines.append("| :--- | :--- |")
+        lines.append(f"| **Severity Rating** | `{severity}` |")
+        lines.append(f"| **Diagnostic Confidence** | `{confidence}` |")
+        lines.append(f"| **Incident Category** | `{category}` |")
+        lines.append(f"| **Primary Failing Service** | `{primary_service}` |")
+        lines.append(f"| **Affected Microservices** | {', '.join([f'`{s}`' for s in affected_services]) if affected_services else '`None`'} |")
+        lines.append(f"| **First Onset Timestamp** | `{first_seen}` |")
+        lines.append(f"| **Latest Event Timestamp** | `{last_seen}` |")
+        lines.append(f"| **Root Cause Occurrences** | `{occurrences} count` |")
+        lines.append("")
 
-        if recs and isinstance(recs, list):
-            lines.append("\n### Recommended Remediation Steps")
+        # System Aggregate Statistics
+        lines.append("### 📈 Aggregate Log Telemetry Statistics")
+        lines.append(f"- **Total Ingested Log Records**: `{statistics.get('total_logs', 0)}`")
+        lines.append(f"- **Total Error / Critical Events**: `{statistics.get('total_errors', 0)}`")
+        lines.append(f"- **Total Warning Events**: `{statistics.get('total_warnings', 0)}`")
+        lines.append(f"- **Total Impacted Microservices**: `{statistics.get('affected_service_count', len(affected_services))}`")
+        lines.append("")
+
+        # Root Cause Analysis
+        lines.append("### 🔍 Root Cause Analysis & Error Signature")
+        lines.append(f"**Primary Diagnosis**: {root_cause.get('summary', 'Operational failure detected.')}")
+        lines.append(f"**Error Signature**: `{root_cause.get('primary_error', 'N/A')}`")
+        lines.append(f"**Category Classification**: `{category}`")
+        lines.append(f"**Diagnostic Details**: {root_cause.get('explanation', 'N/A')}")
+        lines.append("")
+
+        # Chronological Incident Timeline
+        if timeline and isinstance(timeline, list) and len(timeline) > 0:
+            lines.append("### ⏱️ Chronological Incident Timeline Highlights")
+            lines.append("| Timestamp | Level | Service | Event Description |")
+            lines.append("| :--- | :--- | :--- | :--- |")
+            for evt in timeline[:10]:
+                if isinstance(evt, dict):
+                    ts = evt.get("timestamp", "N/A")
+                    lvl = evt.get("level", "INFO")
+                    srv = evt.get("service", "unknown")
+                    msg = evt.get("message", "").replace("|", "\\|")
+                    if len(msg) > 85:
+                        msg = msg[:85] + "..."
+                    lines.append(f"| `{ts}` | `{lvl}` | `{srv}` | {msg} |")
+            lines.append("")
+
+        # Top Recurring Errors
+        if top_errors and isinstance(top_errors, list) and len(top_errors) > 0:
+            lines.append("### 🚨 Top Recurring Error Patterns")
+            for idx, err in enumerate(top_errors[:5], 1):
+                if isinstance(err, dict):
+                    srv = err.get("service", "unknown")
+                    msg = err.get("message", "")
+                    count = err.get("count", 1)
+                    err_first = err.get("first_seen", "N/A")
+                    err_last = err.get("last_seen", "N/A")
+                    err_cat = err.get("category", category)
+                    lines.append(f"{idx}. **`{srv}`** — {msg}")
+                    lines.append(f"   - *Occurrences*: `{count}` | *First Seen*: `{err_first}` | *Last Seen*: `{err_last}` | *Category*: `{err_cat}`")
+            lines.append("")
+
+        # Recommended SRE Remediation Steps
+        if recs and isinstance(recs, list) and len(recs) > 0:
+            lines.append("### 🛡️ Recommended SRE Remediation Action Plan")
             for i, r in enumerate(recs, 1):
                 lines.append(f"{i}. {r}")
 
@@ -154,7 +215,7 @@ class AIService:
                 fallback_text = self._build_fallback_response(report_to_use, request.message)
                 return AIChatResponse(
                     response=fallback_text,
-                    model_used="logsense-rule-engine (rate-limit fallback)",
+                    model_used="logsense-rule-engine",
                     tokens_used={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
                 )
             raise

@@ -24,7 +24,31 @@ export default function AIChat() {
   const [analysisContext, setAnalysisContext] = useState(null);
   const [fetchingContext, setFetchingContext] = useState(true);
 
+  // Per-upload Conversation Persistence State
+  const CHAT_STORAGE_KEY = 'logsense_ai_chat_conversations_v1';
+
+  const [conversationsMap, setConversationsMap] = useState(() => {
+    try {
+      const data = localStorage.getItem(CHAT_STORAGE_KEY);
+      if (data) return JSON.parse(data);
+    } catch {
+      // ignore
+    }
+    return {};
+  });
+
+  const [activeConvId, setActiveConvId] = useState(null);
+
   const messagesEndRef = useRef(null);
+
+  // Save conversations to localStorage when updated
+  useEffect(() => {
+    try {
+      localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(conversationsMap));
+    } catch {
+      // ignore
+    }
+  }, [conversationsMap]);
 
   // Initial Suggested Prompts list
   const suggestedQuestions = [
@@ -106,14 +130,106 @@ export default function AIChat() {
     fetchMetadata();
   }, [fetchMetadata]);
 
-  // Reset conversation and update context when selected upload changes
+  // Preserve conversations when switching uploads
   useEffect(() => {
-    setMessages([]);
     setError(null);
     if (selectedUploadId) {
       fetchAnalysisContext(selectedUploadId);
+
+      // Load or initialize conversations for selectedUploadId
+      const existing = conversationsMap[selectedUploadId] || [];
+      if (existing.length === 0) {
+        const initialConv = {
+          id: `conv_${Date.now()}`,
+          title: 'New Conversation',
+          createdAt: new Date().toISOString(),
+          messages: [],
+        };
+        setConversationsMap((prev) => ({
+          ...prev,
+          [selectedUploadId]: [initialConv],
+        }));
+        setActiveConvId(initialConv.id);
+        setMessages([]);
+      } else {
+        const active = existing[0];
+        setActiveConvId(active.id);
+        setMessages(active.messages || []);
+      }
     }
   }, [selectedUploadId, fetchAnalysisContext]);
+
+  // Handler: Start a New Conversation thread for current upload
+  const handleNewConversation = () => {
+    if (!selectedUploadId) return;
+
+    // Save current active conversation messages
+    if (activeConvId) {
+      setConversationsMap((prev) => {
+        const list = prev[selectedUploadId] || [];
+        const updated = list.map((c) => (c.id === activeConvId ? { ...c, messages } : c));
+        return { ...prev, [selectedUploadId]: updated };
+      });
+    }
+
+    const newConv = {
+      id: `conv_${Date.now()}`,
+      title: 'New Conversation',
+      createdAt: new Date().toISOString(),
+      messages: [],
+    };
+
+    setConversationsMap((prev) => ({
+      ...prev,
+      [selectedUploadId]: [newConv, ...(prev[selectedUploadId] || [])],
+    }));
+    setActiveConvId(newConv.id);
+    setMessages([]);
+  };
+
+  // Handler: Switch active conversation thread for current upload
+  const handleSelectConversation = (convId) => {
+    if (convId === activeConvId) return;
+
+    // Save current messages first
+    if (activeConvId && selectedUploadId) {
+      setConversationsMap((prev) => {
+        const list = prev[selectedUploadId] || [];
+        const updated = list.map((c) => (c.id === activeConvId ? { ...c, messages } : c));
+        return { ...prev, [selectedUploadId]: updated };
+      });
+    }
+
+    const targetConv = (conversationsMap[selectedUploadId] || []).find((c) => c.id === convId);
+    if (targetConv) {
+      setActiveConvId(convId);
+      setMessages(targetConv.messages || []);
+    }
+  };
+
+  // Sync messages into active conversation object & auto-generate title if needed
+  const saveUpdatedMessagesToConv = (newMessages, promptForTitle) => {
+    if (!activeConvId || !selectedUploadId) return;
+
+    setConversationsMap((prev) => {
+      const list = prev[selectedUploadId] || [];
+      const updated = list.map((c) => {
+        if (c.id === activeConvId) {
+          let updatedTitle = c.title;
+          if ((c.title === 'New Conversation' || !c.title) && promptForTitle) {
+            updatedTitle = promptForTitle.length > 30 ? promptForTitle.substring(0, 30) + '...' : promptForTitle;
+          }
+          return {
+            ...c,
+            title: updatedTitle,
+            messages: newMessages,
+          };
+        }
+        return c;
+      });
+      return { ...prev, [selectedUploadId]: updated };
+    });
+  };
 
   // Core function to send chat message to POST /ai/chat
   const handleSendMessage = async (textToSend) => {
@@ -134,7 +250,9 @@ export default function AIChat() {
       timestamp: userMessageTime,
     };
 
-    setMessages((prev) => [...prev, userMsgObj]);
+    const nextMessages = [...messages, userMsgObj];
+    setMessages(nextMessages);
+    saveUpdatedMessagesToConv(nextMessages, trimmedQuestion);
     setLoading(true);
 
     try {
@@ -159,7 +277,9 @@ export default function AIChat() {
           followUps: getFollowUpSuggestions(trimmedQuestion),
         };
 
-        setMessages((prev) => [...prev, assistantMsgObj]);
+        const finalMessages = [...nextMessages, assistantMsgObj];
+        setMessages(finalMessages);
+        saveUpdatedMessagesToConv(finalMessages, trimmedQuestion);
       } else {
         setError('Unexpected API response structure received.');
       }
@@ -283,6 +403,41 @@ export default function AIChat() {
             </select>
           </div>
 
+          {/* Conversations Section */}
+          <div className="space-y-xs pt-xs border-t border-outline-variant/40">
+            <div className="flex items-center justify-between">
+              <label className="font-label-caps text-label-caps text-on-surface-variant block uppercase tracking-wider">
+                Conversations
+              </label>
+              <button
+                type="button"
+                onClick={handleNewConversation}
+                className="font-label-sm text-label-sm px-2 py-0.5 bg-primary-container text-on-primary-container rounded hover:brightness-110 transition-all flex items-center gap-xs cursor-pointer shadow-xs"
+                title="Start new conversation"
+              >
+                <span className="material-symbols-outlined text-[14px]">add</span>
+                New Chat
+              </button>
+            </div>
+            <div className="space-y-xs max-h-36 overflow-y-auto pr-xs">
+              {((conversationsMap[selectedUploadId] || [])).map((conv) => (
+                <button
+                  key={conv.id}
+                  type="button"
+                  onClick={() => handleSelectConversation(conv.id)}
+                  className={`w-full text-left px-sm py-1.5 rounded-lg font-body-sm text-body-sm flex items-center justify-between transition-colors cursor-pointer ${
+                    conv.id === activeConvId
+                      ? 'bg-primary/15 text-primary font-semibold border border-primary/30'
+                      : 'text-on-surface-variant hover:bg-surface-container-high'
+                  }`}
+                >
+                  <span className="truncate flex-1">{conv.title || 'New Conversation'}</span>
+                  <span className="material-symbols-outlined text-[14px] opacity-60 ml-xs">chat_bubble_outline</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Context Details */}
           {fetchingContext ? (
             <div className="space-y-sm py-sm animate-pulse">
@@ -395,6 +550,15 @@ export default function AIChat() {
 
           {/* Action Tools */}
           <div className="flex items-center gap-xs">
+            <button
+              onClick={handleNewConversation}
+              className="flex items-center gap-xs px-sm py-xs bg-primary-container text-on-primary-container hover:brightness-110 rounded-lg font-label-md text-label-md transition-all cursor-pointer shadow-xs"
+              title="Start a new conversation thread for this log batch"
+            >
+              <span className="material-symbols-outlined text-sm">add</span>
+              <span>New Conversation</span>
+            </button>
+
             {messages.length > 0 && (
               <button
                 onClick={handleCopyConversation}
@@ -404,7 +568,7 @@ export default function AIChat() {
                 <span className="material-symbols-outlined text-sm">
                   {copiedConv ? 'check' : 'content_copy'}
                 </span>
-                <span>{copiedConv ? 'Copied Transcript' : 'Copy Conversation'}</span>
+                <span>{copiedConv ? 'Copied' : 'Copy Chat'}</span>
               </button>
             )}
 

@@ -300,3 +300,24 @@ def clear_logs() -> int:
         return deleted_count
     finally:
         conn.close()
+
+
+def delete_logs_by_upload(upload_id: str) -> int:
+    """
+    Deletes all log records belonging to a specific upload_id from the database.
+    Returns the number of deleted records.
+    """
+    if not upload_id or not upload_id.strip():
+        return 0
+
+    init_db()
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM logs WHERE upload_id = ?", (upload_id.strip(),))
+        conn.commit()
+        deleted_count = cursor.rowcount
+        return deleted_count
+    finally:
+        conn.close()
+

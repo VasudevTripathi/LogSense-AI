@@ -21,6 +21,7 @@ export default function Dashboard() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [lastUpdated, setLastUpdated] = useState(null);
 
   const fetchDashboardMetrics = useCallback(async () => {
     setLoading(true);
@@ -29,6 +30,7 @@ export default function Dashboard() {
       const response = await apiService.getDashboard();
       if (response.data && response.data.status === 'success') {
         setData(response.data.data);
+        setLastUpdated(new Date());
       } else {
         setError('Unexpected server response format.');
       }
@@ -117,12 +119,31 @@ export default function Dashboard() {
       {/* Page Header & Actions */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-md mb-lg">
         <div>
-          <h2 className="font-display-lg text-display-lg text-on-surface">Dashboard</h2>
+          <div className="flex items-center gap-md">
+            <h2 className="font-display-lg text-display-lg text-on-surface">Dashboard</h2>
+            {lastUpdated && (
+              <span className="font-label-sm text-label-sm px-2.5 py-1 rounded-full bg-surface-container-high text-on-surface-variant flex items-center gap-xs">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                Last updated {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+              </span>
+            )}
+          </div>
           <p className="font-body-md text-body-md text-on-surface-variant mt-xs">
             Overview of your system health and log metrics.
           </p>
         </div>
         <div className="flex items-center gap-sm">
+          <button
+            onClick={fetchDashboardMetrics}
+            disabled={loading}
+            className="font-label-md text-label-md px-md py-sm bg-surface-container-lowest text-on-surface border border-outline-variant rounded-lg hover:bg-surface-container-low transition-colors flex items-center gap-xs cursor-pointer disabled:opacity-50"
+            title="Refresh dashboard metrics"
+          >
+            <span className={`material-symbols-outlined text-body-md ${loading ? 'animate-spin' : ''}`}>
+              refresh
+            </span>
+            Refresh
+          </button>
           <button
             onClick={() => navigate('/analysis')}
             className="font-label-md text-label-md px-md py-sm bg-surface-container-lowest text-primary border border-outline-variant rounded-lg hover:bg-surface-container-low transition-colors flex items-center gap-xs cursor-pointer"
