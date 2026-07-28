@@ -130,7 +130,6 @@ Modern distributed systems generate thousands of log lines per second. When inci
 
 ## Screenshots
 
-> _Add screenshots to the `/images/` directory at the project root._
 
 | Dashboard | Upload & Ingestion |
 |:-:|:-:|
