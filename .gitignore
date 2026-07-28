@@ -5,6 +5,7 @@
 
 # Python
 __pycache__/
+backend/__pycache__/
 *.py[cod]
 *.pyo
 .pytest_cache/
@@ -18,6 +19,7 @@ backend/*.db
 
 # Node & Build Outputs
 node_modules/
+frontend/node_modules/
 dist/
 frontend/dist/
 
